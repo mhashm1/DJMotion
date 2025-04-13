@@ -73,6 +73,41 @@ export default function Home() {
     endpoint: "/api/gesture"
   })
 
+  // Additionally listen for direct gesture events from the GestureMidiEngine
+  useEffect(() => {
+    if (!isStarted) return;
+
+    // Map of gestures to actions
+    const gestureToAction: Record<string, string> = {
+      'open_palm': 'pause',
+      'pointing': 'next',
+      'fist': 'play',
+      'victory': 'crossfade',
+      'thumbs_up': 'volume_up'
+    };
+    
+    const handleGestureUpdate = (event: CustomEvent) => {
+      if (event.detail) {
+        const { gesture, confidence } = event.detail;
+        setCurrentGesture(gesture);
+        setConfidence(confidence);
+        
+        // Look up the action for this gesture
+        const action = gestureToAction[gesture.toLowerCase()];
+        if (action) {
+          handleAction(action);
+        }
+      }
+    };
+    
+    // Add event listener with type assertion
+    window.addEventListener('gestureupdate', handleGestureUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('gestureupdate', handleGestureUpdate as EventListener);
+    };
+  }, [isStarted, handleAction]);
+
   const handleStart = async () => {
     try {
       audioUtils.setTrackList([

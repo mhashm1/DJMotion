@@ -4,11 +4,13 @@ import { useRef, useEffect, useState } from "react"
 import { Card, CardContent } from "@/app/components/ui/card"
 import { Button } from "@/app/components/ui/button"
 import { Camera, CameraOff } from "lucide-react"
+import GestureMidiEngine from "./gesture-midi-engine"
 
 export default function WebcamView() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isActive, setIsActive] = useState(true)
   const [isLoading, setIsLoading] = useState(true)
+  const [showGestureEngine, setShowGestureEngine] = useState(false)
 
   useEffect(() => {
     let stream: MediaStream | null = null
@@ -30,6 +32,19 @@ export default function WebcamView() {
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream
+          
+          // After camera is loaded, enable gesture engine
+          videoRef.current.onloadeddata = () => {
+            setShowGestureEngine(true);
+            
+            // Connect the input_video from GestureMidiEngine to our webcam feed
+            setTimeout(() => {
+              const inputVideo = document.querySelector('.input_video') as HTMLVideoElement;
+              if (inputVideo && videoRef.current) {
+                inputVideo.srcObject = videoRef.current.srcObject;
+              }
+            }, 500);
+          };
         }
       } catch (error) {
         console.error("Error accessing webcam:", error)
@@ -44,11 +59,13 @@ export default function WebcamView() {
       if (stream) {
         stream.getTracks().forEach((track) => track.stop())
       }
+      setShowGestureEngine(false);
     }
   }, [isActive])
 
   const toggleCamera = () => {
     setIsActive((prev) => !prev)
+    setShowGestureEngine(false);
   }
 
   return (
@@ -62,14 +79,17 @@ export default function WebcamView() {
           )}
 
           {isActive ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className={`h-full w-full object-cover ${isLoading ? "opacity-0" : "opacity-100"}`}
-              onCanPlay={() => setIsLoading(false)}
-            />
+            <>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`h-full w-full object-cover ${isLoading ? "opacity-0" : "opacity-100"}`}
+                onCanPlay={() => setIsLoading(false)}
+              />
+              {showGestureEngine && <GestureMidiEngine />}
+            </>
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-gray-900">
               <CameraOff className="h-12 w-12 text-gray-600" />

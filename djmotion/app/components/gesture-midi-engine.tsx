@@ -1,9 +1,58 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+
+// Add type declaration to Window object
+declare global {
+  interface Window {
+    gestureData: {
+      gesture: string;
+      confidence: number;
+      action: string;
+    };
+    updateGestureData: (gesture: string, confidence: number, action: string) => void;
+  }
+}
 
 export default function GestureMidiEngine() {
+  const gestureDataRef = useRef<{
+    gesture: string;
+    confidence: number;
+    action: string;
+  }>({ gesture: "", confidence: 0, action: "" });
+  
+  // This will be accessible to other components via window object
   useEffect(() => {
+    // Make the gesture data accessible to other components
+    window.gestureData = gestureDataRef.current;
+    
+    // Function to update gesture data that will be called from gesture-midi.js
+    window.updateGestureData = (gesture: string, confidence: number, action: string) => {
+      gestureDataRef.current.gesture = gesture;
+      gestureDataRef.current.confidence = confidence;
+      gestureDataRef.current.action = action;
+      
+      // Dispatch a custom event that other components can listen for
+      const event = new CustomEvent('gestureupdate', { 
+        detail: { gesture, confidence, action } 
+      });
+      window.dispatchEvent(event);
+      
+      // Also update the API cache
+      fetch('/api/gesture', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          gesture, 
+          confidence 
+        }),
+      }).catch(error => {
+        console.error('Error updating gesture API cache:', error);
+      });
+    };
+
     const externalScripts = [
       "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.3/hands.min.js",
       "https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.min.js",
@@ -12,10 +61,12 @@ export default function GestureMidiEngine() {
     ];
 
     externalScripts.forEach((src) => {
-      const script = document.createElement("script");
-      script.src = src;
-      script.async = true;
-      document.body.appendChild(script);
+      if (!document.querySelector(`script[src="${src}"]`)) {
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        document.body.appendChild(script);
+      }
     });
 
     const gestureScript = document.createElement("script");
@@ -24,19 +75,22 @@ export default function GestureMidiEngine() {
     document.body.appendChild(gestureScript);
 
     return () => {
-      externalScripts.forEach((src) => {
-        const s = document.querySelector(`script[src="${src}"]`);
-        if (s) s.remove();
-      });
-      document.body.removeChild(gestureScript);
+      // Clean up by removing the gesture script only
+      const gs = document.querySelector(`script[src="/scripts/gesture-midi.js"]`);
+      if (gs) gs.remove();
+      
+      // Don't remove external scripts as they might be used elsewhere
+      // Just clean up our global references
+      window.gestureData = { gesture: "", confidence: 0, action: "" };
+      window.updateGestureData = () => {};
     };
   }, []);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" id="gesture-engine">
       {/* Core video/canvas inputs */}
-      <video className="input_video" style={{ display: "none" }}></video>
-      <canvas className="output_canvas" width="1280" height="720" />
+      <video className="input_video hidden" style={{ display: "none" }}></video>
+      <canvas className="output_canvas absolute top-0 left-0 z-10 pointer-events-none opacity-60" width="1280" height="720" />
 
       {/* Required hidden inputs */}
       <div style={{ display: "none" }}>

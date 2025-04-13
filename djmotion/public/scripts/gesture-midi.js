@@ -532,7 +532,6 @@ window.addEventListener("load", () => {
             counterTracker = new Date();
             }
         
-            //Draw Hand landmarks on screen
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.drawImage(
@@ -542,34 +541,32 @@ window.addEventListener("load", () => {
             canvasElement.width,
             canvasElement.height
             );
-            if (results.multiHandLandmarks && results.multiHandedness) {
-            for (let index = 0; index < results.multiHandLandmarks.length; index++) {
-                const classification = results.multiHandedness[index];
-                const isRightHand = classification.label === "Right";
-                const landmarks = results.multiHandLandmarks[index];
-                if (showTracking.checked) {
-                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
-                    color: isRightHand ? "#fff" : "#056df5",
-                }),
-                    drawLandmarks(canvasCtx, landmarks, {
-                    color: isRightHand ? "#fff" : "#056df5",
-                    fillColor: isRightHand ? "#056df5" : "#fff",
-                    radius: (x) => {
-                        return lerp(x.from.z, -0.15, 0.1, 10, 1);
-                    },
-                    });
-                }
-                if (isRightHand === false) {
-                leftIndex = landmarks[8];
-                leftWrist = landmarks[0];
-                leftThumb = landmarks[4];
-                leftPinky = landmarks[20];
-                } else {
-                rightIndex = landmarks[8];
-                rightWrist = landmarks[0];
-                rightThumb = landmarks[4];
-                rightPinky = landmarks[20];
-                }
+        
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            // Process the first hand
+            const hand = results.multiHandLandmarks[0];
+            
+            // Draw hand landmarks
+            if (showTracking.checked) {
+                drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, {
+                color: "#00FF00",
+                lineWidth: 5,
+                });
+                drawLandmarks(canvasCtx, hand, { color: "#FF0000", lineWidth: 2 });
+            }
+        
+            // Get key landmarks
+            leftWrist = hand[0];
+            leftThumb = hand[4];
+            leftIndex = hand[8];
+            leftPinky = hand[20];
+            rightWrist = hand[0];
+            rightThumb = hand[4];
+            rightIndex = hand[8];
+            rightPinky = hand[20];
+            
+            // Send to MIDI functions if enabled
+            if (sendMidi.checked) {
                 myMidi(
                 leftIndex,
                 leftWrist,
@@ -580,10 +577,79 @@ window.addEventListener("load", () => {
                 rightThumb,
                 rightPinky
                 );
-                myMidiNoteLoop(leftIndex, rightIndex);
+            }
+            
+            // Detect gesture based on hand landmarks
+            const gesture = detectGesture(hand);
+            
+            // Call window.updateGestureData function if it exists
+            if (window.updateGestureData && gesture) {
+                window.updateGestureData(gesture.name, gesture.confidence, "");
+            }
             }
             canvasCtx.restore();
+        }
+        
+        // New function to detect gestures based on hand landmark positions
+        function detectGesture(landmarks) {
+            // Helper function to calculate distance between points
+            function distance(a, b) {
+                return Math.sqrt(
+                Math.pow(a.x - b.x, 2) + 
+                Math.pow(a.y - b.y, 2) + 
+                Math.pow(a.z - b.z, 2)
+                );
             }
+            
+            const wrist = landmarks[0];
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const middleTip = landmarks[12];
+            const ringTip = landmarks[16];
+            const pinkyTip = landmarks[20];
+            
+            // Thumb up (distance from thumb to wrist significantly greater than others)
+            if (thumbTip.y < wrist.y - 0.1 && 
+                indexTip.y > thumbTip.y && 
+                middleTip.y > thumbTip.y) {
+                return { name: "thumbs_up", confidence: 0.9 };
+            }
+            
+            // Open palm (all fingers extended)
+            if (thumbTip.x < wrist.x && 
+                distance(indexTip, wrist) > 0.15 && 
+                distance(middleTip, wrist) > 0.15 && 
+                distance(ringTip, wrist) > 0.15 && 
+                distance(pinkyTip, wrist) > 0.15) {
+                return { name: "open_palm", confidence: 0.9 };
+            }
+            
+            // Pointing (index finger extended, others curled)
+            if (distance(indexTip, wrist) > 0.2 && 
+                distance(middleTip, wrist) < 0.15 && 
+                distance(ringTip, wrist) < 0.15 && 
+                distance(pinkyTip, wrist) < 0.15) {
+                return { name: "pointing", confidence: 0.85 };
+            }
+            
+            // Victory sign (index and middle extended, others curled)
+            if (distance(indexTip, wrist) > 0.15 && 
+                distance(middleTip, wrist) > 0.15 && 
+                distance(ringTip, wrist) < 0.12 && 
+                distance(pinkyTip, wrist) < 0.12) {
+                return { name: "victory", confidence: 0.87 };
+            }
+            
+            // Fist (all fingers curled)
+            if (distance(indexTip, wrist) < 0.12 && 
+                distance(middleTip, wrist) < 0.12 && 
+                distance(ringTip, wrist) < 0.12 && 
+                distance(pinkyTip, wrist) < 0.12) {
+                return { name: "fist", confidence: 0.85 };
+            }
+            
+            // No recognized gesture
+            return null;
         }
         
         //Toggle selfie view
